@@ -6,6 +6,8 @@ import gym
 from collections import defaultdict
 import tensorflow as tf
 import numpy as np
+import datetime
+import json
 
 from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
 from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
@@ -63,7 +65,9 @@ def train(args, extra_args):
 
     env = build_env(args)
     if args.save_video_interval != 0:
-        env = VecVideoRecorder(env, osp.join(logger.get_dir(), "videos"), record_video_trigger=lambda x: x % args.save_video_interval == 0, video_length=args.save_video_length)
+        env = VecVideoRecorder(env, osp.join(logger.get_dir(), "videos"),
+                               record_video_trigger=lambda x: x % args.save_video_interval == 0,
+                               video_length=args.save_video_length)
 
     if args.network:
         alg_kwargs['network'] = args.network
@@ -104,13 +108,14 @@ def build_env(args):
 
     else:
         config = tf.ConfigProto(allow_soft_placement=True,
-                               intra_op_parallelism_threads=1,
-                               inter_op_parallelism_threads=1)
+                                intra_op_parallelism_threads=1,
+                                inter_op_parallelism_threads=1)
         config.gpu_options.allow_growth = True
         get_session(config=config)
 
         flatten_dict_observations = alg not in {'her'}
-        env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations)
+        env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale,
+                           flatten_dict_observations=flatten_dict_observations)
 
         if env_type == 'mujoco':
             env = VecNormalize(env, use_tf=True)
@@ -151,6 +156,7 @@ def get_default_network(env_type):
     else:
         return 'mlp'
 
+
 def get_alg_module(alg, submodule=None):
     submodule = submodule or alg
     try:
@@ -176,11 +182,11 @@ def get_learn_function_defaults(alg, env_type):
     return kwargs
 
 
-
 def parse_cmdline_kwargs(args):
     '''
     convert a list of '='-spaced command-line arguments to a dictionary, evaluating python objects when possible
     '''
+
     def parse(v):
 
         assert isinstance(v, str)
@@ -189,7 +195,7 @@ def parse_cmdline_kwargs(args):
         except (NameError, SyntaxError):
             return v
 
-    return {k: parse(v) for k,v in parse_unknown_args(args).items()}
+    return {k: parse(v) for k, v in parse_unknown_args(args).items()}
 
 
 def configure_logger(log_path, **kwargs):
@@ -205,6 +211,10 @@ def main(args):
     arg_parser = common_arg_parser()
     args, unknown_args = arg_parser.parse_known_args(args)
     extra_args = parse_cmdline_kwargs(unknown_args)
+    if args.log_path == None:
+        date_str = '{}'.format(datetime.datetime.today().strftime('%Y-%m-%d_%H-%M-%S'))
+        args.log_path = osp.abspath(osp.join('./logs', args.alg, args.env, date_str))
+        args.save_path = args.log_path
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
@@ -212,6 +222,10 @@ def main(args):
     else:
         rank = MPI.COMM_WORLD.Get_rank()
         configure_logger(args.log_path, format_strs=[])
+
+    # save opts
+    with open(osp.join(args.log_path, 'args.json'), 'w') as fp:
+        json.dump(vars(args), fp, indent=1)
 
     model, env = train(args, extra_args)
 
@@ -229,7 +243,7 @@ def main(args):
         episode_rew = 0
         while True:
             if state is not None:
-                actions, _, state, _ = model.step(obs,S=state, M=dones)
+                actions, _, state, _ = model.step(obs, S=state, M=dones)
             else:
                 actions, _, _, _ = model.step(obs)
 
@@ -245,6 +259,7 @@ def main(args):
     env.close()
 
     return model
+
 
 if __name__ == '__main__':
     main(sys.argv)

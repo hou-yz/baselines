@@ -1,4 +1,5 @@
 import tensorflow as tf
+from .vi_module import VI_module
 from baselines.common import tf_util
 from baselines.a2c.utils import fc
 from baselines.common.distributions import make_pdtype
@@ -15,7 +16,7 @@ class PolicyWithValue(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, sess=None, **tensors):
+    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, iterative=False, sess=None, **tensors):
         """
         Parameters:
         ----------
@@ -40,6 +41,11 @@ class PolicyWithValue(object):
 
         vf_latent = vf_latent if vf_latent is not None else latent
 
+        if iterative:
+            if not hasattr(self, 'vi_module'):
+                self.vi_module = VI_module(env, latent)
+            q_plan, v_plan = self.vi_module(latent)
+            latent = tf.concat([latent, tf.reshape(q_plan[0], [latent.shape.as_list()[0], -1])], axis=1)
         vf_latent = tf.layers.flatten(vf_latent)
         latent = tf.layers.flatten(latent)
 
@@ -118,7 +124,7 @@ class PolicyWithValue(object):
     def load(self, load_path):
         tf_util.load_state(load_path, sess=self.sess)
 
-def build_policy(env, policy_network, value_network=None,  normalize_observations=False, estimate_q=False, **policy_kwargs):
+def build_policy(env, policy_network, value_network=None,  normalize_observations=False, estimate_q=False, iterative=False,  **policy_kwargs):
     if isinstance(policy_network, str):
         network_type = policy_network
         policy_network = get_network_builder(network_type)(**policy_kwargs)
@@ -172,6 +178,7 @@ def build_policy(env, policy_network, value_network=None,  normalize_observation
             vf_latent=vf_latent,
             sess=sess,
             estimate_q=estimate_q,
+            iterative=iterative,
             **extra_tensors
         )
         return policy
