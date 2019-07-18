@@ -6,7 +6,7 @@ class VI_module(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, state, expand_depth=2, expand_breadth=4, lookahead_depth=5, gamma=0.98):
+    def __init__(self, env, state, expand_depth=2, expand_breadth=4, lookahead_depth=2, gamma=0.99, sess=None):
 
         self.n_actions = env.action_space.n
         self.state_dim = state.shape.as_list()[1]
@@ -14,37 +14,71 @@ class VI_module(object):
         self.expand_breadth = expand_breadth
         self.lookahead_depth = lookahead_depth
         self.gamma = gamma
+        self.sess = sess
+        self.a_history = [None] * self.lookahead_depth
+        self.r_history = [None] * self.lookahead_depth  # one step reward
+        self.v_history = [None] * self.lookahead_depth  # accumulated reward
+        self.s_history = [None] * self.lookahead_depth
 
         # value iteration: expand for all possible action
-        self.vi_value = tf.keras.layers.Dense(self.n_actions, activation='relu', input_shape=(self.state_dim,),
-                                              name='vi/value')
         self.vi_trans = tf.keras.layers.Dense(self.n_actions * self.state_dim, activation='relu',
                                               input_shape=(self.state_dim,), name='vi/trans')
-        self.vi_reward = tf.keras.layers.Dense(self.n_actions, activation='relu', input_shape=(self.state_dim,),
+        self.vi_value = tf.keras.layers.Dense(1, activation=None, input_shape=(self.state_dim,),
+                                              name='vi/value')
+        self.vi_reward = tf.keras.layers.Dense(self.n_actions, activation=None, input_shape=(self.state_dim,),
                                                name='vi/reward')
-        self.vi_timestep = tf.keras.layers.Dense(1, activation='relu', input_shape=(self.state_dim,),
-                                                 name='vi/timestep')
 
-    def __call__(self, state, **kwargs):
-        batch_size = state.shape.as_list()[0]
+    def rollout(self, s, a=None):
+        r = self.vi_reward(s)
+        s = self.vi_trans(s)
+        v = tf.reshape(self.vi_value(tf.reshape(s, [-1, self.state_dim])), [-1, self.n_actions])
+        if a is not None:
+            l = tf.expand_dims(tf.range(0, tf.shape(r)[0]), 1)
+            l = tf.concat([l, tf.tile(tf.reshape(a, [1, 1]), [tf.shape(r)[0], 1])], axis=1)
+            r = tf.gather_nd(r, l)
+            s = tf.gather_nd(tf.reshape(s, [-1, self.n_actions, self.state_dim]), l)
+            v = tf.gather_nd(v, l)
+        return r, v, s
 
+    def training_fwd(self, s, a, v, r, done):
+        self.a_history.pop()
+        self.r_history.pop()
+        self.v_history.pop()
+        self.s_history.pop()
+        self.a_history.append(a)
+        self.r_history.append(r)
+        self.v_history.append(v)
+        self.s_history.append(s)
+
+        r_vi_loss = []
+        v_vi_loss = []
+        s_vi_loss = []
+
+        s = self.s_history[0]
+        if s is None:
+            return tf.constant(0.0)
+        for i in range(self.lookahead_depth):
+            a_gt = self.a_history[i]
+            r_gt = self.r_history[i]
+            v_gt = self.v_history[i]
+            s_gt = self.s_history[i]
+            r, v, s = self.rollout(s, a_gt)
+            r_vi_loss.append(tf.losses.mean_squared_error(r, r_gt))
+            v_vi_loss.append(tf.losses.mean_squared_error(v, v_gt))
+        return tf.math.reduce_sum(r_vi_loss) + tf.math.reduce_sum(v_vi_loss)
+
+    def __call__(self, s, **kwargs):
         # tree expansion
         q_rollout = []
         r_rollout = []
-        g_rollout = []
         v_rollout = []
         idx_rollout = []
         s_rollout = []
 
-        s = state
         for i in range(self.lookahead_depth):
             # forward
-            v = self.vi_value(s)
-            s = self.vi_trans(s)
-            r = self.vi_reward(s)
-            t = self.vi_timestep(s)
-            g = tf.pow(tf.constant(self.gamma), t)
-            q = r + g * v
+            r, v, s = self.rollout(s)
+            q = r + self.gamma * v
 
             # only record top k terms with k=expand_breadth or 1
             b = min(self.expand_breadth, self.n_actions) if i < self.expand_depth else 1
@@ -55,13 +89,11 @@ class VI_module(object):
             v = tf.gather_nd(v, l)
             s = tf.gather_nd(tf.reshape(s, [-1, self.n_actions, self.state_dim]), l)
             r = tf.gather_nd(r, l)
-            g = tf.gather_nd(g, l)
             q = tf.gather_nd(q, l)
 
             r_rollout.append(r)
             v_rollout.append(v)
             s_rollout.append(s)
-            g_rollout.append(g)
             q_rollout.append(q)
             idx_rollout.append(idx)
 
@@ -71,7 +103,7 @@ class VI_module(object):
 
         v_plan[-1] = v_rollout[-1]
         for i in reversed(range(self.lookahead_depth)):
-            q_plan[i] = r_rollout[i] + g_rollout[i] * v_plan[i]
+            q_plan[i] = r_rollout[i] + self.gamma * v_plan[i]
             if i > 0:
                 b = self.expand_breadth if i < self.expand_depth else 1
                 q_max = tf.reduce_max(tf.reshape(q_plan[i], [-1, b]), axis=1)

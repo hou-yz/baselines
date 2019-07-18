@@ -1,20 +1,21 @@
-import sys
-import re
-import multiprocessing
-import os.path as osp
-import gym
-from collections import defaultdict
-import tensorflow as tf
-import numpy as np
 import datetime
 import json
+import multiprocessing
+import os.path as osp
+import re
+import sys
+from collections import defaultdict
+from importlib import import_module
 
-from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
-from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
+import gym
+import numpy as np
+import tensorflow as tf
+
+from baselines import logger
 from baselines.common.cmd_util import common_arg_parser, parse_unknown_args, make_vec_env, make_env
 from baselines.common.tf_util import get_session
-from baselines import logger
-from importlib import import_module
+from baselines.common.vec_env import VecFrameStack, VecNormalize, VecEnv
+from baselines.common.vec_env.vec_video_recorder import VecVideoRecorder
 
 try:
     from mpi4py import MPI
@@ -213,7 +214,9 @@ def main(args):
     extra_args = parse_cmdline_kwargs(unknown_args)
     if args.log_path == None:
         date_str = '{}'.format(datetime.datetime.today().strftime('%Y-%m-%d_%H-%M-%S'))
-        args.log_path = osp.abspath(osp.join('./logs', args.alg, args.env, date_str))
+        args.log_path = osp.abspath(
+            osp.join('./logs', args.alg if 'iterative' not in extra_args else args.alg + '-iterative', args.env,
+                     date_str))
         args.save_path = args.log_path
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
