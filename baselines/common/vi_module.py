@@ -15,10 +15,6 @@ class VI_module(object):
         self.lookahead_depth = lookahead_depth
         self.gamma = gamma
         self.sess = sess
-        self.a_history = [None] * self.lookahead_depth
-        self.r_history = [None] * self.lookahead_depth  # one step reward
-        self.v_history = [None] * self.lookahead_depth  # accumulated reward
-        self.s_history = [None] * self.lookahead_depth
 
         # value iteration: expand for all possible action
         self.vi_trans = tf.keras.layers.Dense(self.n_actions * self.state_dim, activation='relu',
@@ -34,38 +30,40 @@ class VI_module(object):
         v = tf.reshape(self.vi_value(tf.reshape(s, [-1, self.state_dim])), [-1, self.n_actions])
         if a is not None:
             l = tf.expand_dims(tf.range(0, tf.shape(r)[0]), 1)
-            l = tf.concat([l, tf.tile(tf.reshape(a, [1, 1]), [tf.shape(r)[0], 1])], axis=1)
+            l = tf.concat([l, tf.dtypes.cast(tf.reshape(a, [-1, 1]), tf.int32)], axis=1)
             r = tf.gather_nd(r, l)
             s = tf.gather_nd(tf.reshape(s, [-1, self.n_actions, self.state_dim]), l)
             v = tf.gather_nd(v, l)
         return r, v, s
 
-    def training_fwd(self, s, a, v, r, done):
-        self.a_history.pop()
-        self.r_history.pop()
-        self.v_history.pop()
-        self.s_history.pop()
-        self.a_history.append(a)
-        self.r_history.append(r)
-        self.v_history.append(v)
-        self.s_history.append(s)
+    def training_fwd(self, s_history, a_history, v_history, r_history, nenvs, nstep):
+        # for each envs, carry out same action for nstep
+        r_vi, v_vi, s_vi = [], [], []
+        l = tf.expand_dims(tf.range(0, nenvs), 1)
+        l = tf.concat([l, tf.tile([[0]], [nenvs, 1])], axis=1)
+        s = tf.gather_nd(tf.reshape(s_history, [nenvs, nstep, -1]), l)
+        a = tf.gather_nd(tf.reshape(a_history, [nenvs, nstep]), l)
+        for i in range(nstep):
+            s_vi.append(s)
+            r, v, s = self.rollout(s, a)
+            r_vi.append(r)
+            v_vi.append(v)
+        r_vi = tf.stack(r_vi, axis=1)
+        v_vi = tf.stack(v_vi, axis=1)
+        s_vi = tf.stack(s_vi, axis=1)
 
-        r_vi_loss = []
-        v_vi_loss = []
-        s_vi_loss = []
-
-        s = self.s_history[0]
-        if s is None:
-            return tf.constant(0.0)
-        for i in range(self.lookahead_depth):
-            a_gt = self.a_history[i]
-            r_gt = self.r_history[i]
-            v_gt = self.v_history[i]
-            s_gt = self.s_history[i]
-            r, v, s = self.rollout(s, a_gt)
-            r_vi_loss.append(tf.losses.mean_squared_error(r, r_gt))
-            v_vi_loss.append(tf.losses.mean_squared_error(v, v_gt))
-        return tf.math.reduce_sum(r_vi_loss) + tf.math.reduce_sum(v_vi_loss)
+        s_history = tf.reshape(s_history, [nenvs, 1, nstep, -1])
+        v_history = tf.reshape(v_history, [nenvs, 1, nstep])
+        r_history = tf.reshape(r_history, [nenvs, 1, nstep])
+        s_vi = tf.reshape(s_vi, [nenvs, nstep, 1, -1])
+        v_vi = tf.reshape(v_vi, [nenvs, nstep, 1])
+        r_vi = tf.reshape(r_vi, [nenvs, nstep, 1])
+        # use the upper triangular part
+        r_mat = tf.matrix_band_part(tf.reverse(r_history - r_vi, [-1]), 0, -1)
+        v_mat = tf.matrix_band_part(tf.reverse(v_history - v_vi, [-1]), 0, -1)
+        r_loss = tf.reduce_sum(tf.math.pow(r_mat, 2))
+        v_loss = tf.reduce_sum(tf.math.pow(v_mat, 2))
+        return r_loss + v_loss
 
     def __call__(self, s, **kwargs):
         # tree expansion

@@ -30,7 +30,7 @@ class Model(object):
 
     def __init__(self, policy, env, nsteps,
                  ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear'):
+                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear', vi_coef=1e-2):
 
         sess = tf_util.get_session()
         nenvs = env.num_envs
@@ -65,12 +65,12 @@ class Model(object):
         vf_loss = losses.mean_squared_error(tf.squeeze(train_model.vf), R_sum)
 
         # value iteration loss
-        vi_loss = None
+        vi_loss = 0
         if train_model.iterative:
-            vi_loss = train_model.vi_module.training_fwd(train_model.vi_state, A, R_sum, R_onestep, DONE)
+            vi_loss = train_model.vi_module.training_fwd(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
 
         # loss sum
-        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
+        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + vi_loss * vi_coef
 
         # Update parameters using loss
         # 1. Get the model parameters
@@ -108,7 +108,7 @@ class Model(object):
                 [pg_loss, vf_loss, entropy, vi_loss, _train],
                 td_map
             )
-            return policy_loss, value_loss, policy_entropy
+            return policy_loss, value_loss, policy_entropy, value_iteration_loss
 
         self.train = train
         self.train_model = train_model
@@ -213,8 +213,9 @@ def learn(
         obs, states, sum_rewards, masks, actions, values, epinfos, dones, onestep_rewards = runner.run()
         epinfobuf.extend(epinfos)
 
-        policy_loss, value_loss, policy_entropy = model.train(obs, states, sum_rewards, masks, actions, values, dones,
-                                                              onestep_rewards)
+        policy_loss, value_loss, policy_entropy, vi_loss = model.train(obs, states, sum_rewards, masks, actions, values,
+                                                                       dones,
+                                                                       onestep_rewards)
         nseconds = time.time() - tstart
 
         # Calculate the fps (frame per second)
@@ -228,6 +229,7 @@ def learn(
             logger.record_tabular("fps", fps)
             logger.record_tabular("policy_entropy", float(policy_entropy))
             logger.record_tabular("value_loss", float(value_loss))
+            logger.record_tabular("value_iteration_loss", float(vi_loss))
             logger.record_tabular("explained_variance", float(ev))
             logger.record_tabular("eprewmean", safemean([epinfo['r'] for epinfo in epinfobuf]))
             logger.record_tabular("eplenmean", safemean([epinfo['l'] for epinfo in epinfobuf]))
