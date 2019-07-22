@@ -69,10 +69,10 @@ class PolicyWithValue(object):
             self.q = fc(vf_latent, 'q', env.action_space.n)
             self.vf = self.q
         else:
-            # if iterative:
-            #     self.vf = self.vi_module.vi_value(vf_latent)
-            # else:
-            self.vf = fc(vf_latent, 'vf', 1)
+            if 0:  # self.iterative:
+                self.vf = self.vi_module.vi_value(vf_latent)
+            else:
+                self.vf = fc(vf_latent, 'vf', 1)
             self.vf = self.vf[:, 0]
         pass
 
