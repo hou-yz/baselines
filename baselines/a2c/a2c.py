@@ -30,7 +30,7 @@ class Model(object):
 
     def __init__(self, policy, env, nsteps,
                  ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear', vi_coef=1e-2):
+                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear', vi_coef=0.1):
 
         sess = tf_util.get_session()
         nenvs = env.num_envs
@@ -65,12 +65,15 @@ class Model(object):
         vf_loss = losses.mean_squared_error(tf.squeeze(train_model.vf), R_sum)
 
         # value iteration loss
-        vi_loss = 0
+        vi_loss = tf.constant(0.0)
         if train_model.iterative:
-            vi_loss = train_model.vi_module.training_fwd(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
+            vi_loss = train_model.vi_module.training_loss(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
 
         # loss sum
-        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + vi_loss * vi_coef
+        if train_model.iterative:
+            loss = pg_loss + vf_loss * vf_coef + vi_loss * vi_coef
+        else:
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
 
         # Update parameters using loss
         # 1. Get the model parameters
@@ -227,6 +230,7 @@ def learn(
             logger.record_tabular("nupdates", update)
             logger.record_tabular("total_timesteps", update * nbatch)
             logger.record_tabular("fps", fps)
+            logger.record_tabular("policy_loss", float(policy_loss))
             logger.record_tabular("policy_entropy", float(policy_entropy))
             logger.record_tabular("value_loss", float(value_loss))
             logger.record_tabular("value_iteration_loss", float(vi_loss))
