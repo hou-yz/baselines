@@ -49,7 +49,8 @@ class PolicyWithValue(object):
             if not hasattr(self, 'vi_module'):
                 self.vi_module = VI_module(env, latent, sess=self.sess)
             q_plan, v_plan = self.vi_module(latent)
-            latent = tf.concat([latent, tf.reshape(q_plan[0], [latent.shape.as_list()[0], -1])], axis=1)
+            latent = tf.keras.layers.Dense(16, activation='relu')(latent)
+            latent = tf.concat([latent, q_plan[0]], axis=1)
         vf_latent = tf.layers.flatten(vf_latent)
         latent = tf.layers.flatten(latent)
 
@@ -69,8 +70,9 @@ class PolicyWithValue(object):
             self.q = fc(vf_latent, 'q', env.action_space.n)
             self.vf = self.q
         else:
-            if 0:  # self.iterative:
+            if self.iterative:
                 self.vf = self.vi_module.vi_value(vf_latent)
+                # self.vf = tf.math.reduce_max(q_plan[0], axis=1)
             else:
                 self.vf = fc(vf_latent, 'vf', 1)
             self.vf = self.vf[:, 0]

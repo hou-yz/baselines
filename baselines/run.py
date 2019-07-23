@@ -214,9 +214,10 @@ def main(args):
     extra_args = parse_cmdline_kwargs(unknown_args)
     if args.log_path == None:
         date_str = '{}'.format(datetime.datetime.today().strftime('%Y-%m-%d_%H-%M-%S'))
-        args.log_path = osp.abspath(
-            osp.join('./logs', args.alg if 'iterative' not in extra_args else args.alg + '-iterative', args.env,
-                     date_str))
+        folder_name = args.alg
+        if 'iterative' in extra_args: folder_name += '-iterative'
+        if args.name is not None: folder_name += '-' + args.name
+        args.log_path = osp.abspath(osp.join('./logs', folder_name, args.env, date_str))
         args.save_path = args.log_path
 
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:

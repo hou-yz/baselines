@@ -65,7 +65,7 @@ class VI_module(object):
         self.n_actions = env.action_space.n
         self.state_shape = state.shape.as_list()[1:]
         self.expand_depth = expand_depth
-        self.expand_breadth = expand_breadth
+        self.expand_breadth = min(expand_breadth, self.n_actions)
         self.lookahead_depth = max(lookahead_depth, expand_depth)
         self.gamma = gamma
         self.sess = sess
@@ -129,6 +129,7 @@ class VI_module(object):
         v_rollout = []
         idx_rollout = []
         s_rollout = []
+        n_envs = s.shape.as_list()[0]
 
         for i in range(self.lookahead_depth):
             # forward
@@ -136,7 +137,7 @@ class VI_module(object):
             q = r + self.gamma * v
 
             # only record top k terms with k=expand_breadth or 1
-            b = min(self.expand_breadth, self.n_actions) if i < self.expand_depth else 1
+            b = self.expand_breadth if i < self.expand_depth else 1
             _, idx = tf.nn.top_k(q, k=b)
             l = tf.tile(tf.expand_dims(tf.range(0, tf.shape(idx)[0]), 1), [1, b])
             l = tf.concat([tf.reshape(l, [-1, 1]), tf.reshape(idx, [-1, 1])], axis=1)
@@ -160,9 +161,13 @@ class VI_module(object):
         for i in reversed(range(self.lookahead_depth)):
             q_plan[i] = r_rollout[i] + self.gamma * v_plan[i]
             if i > 0:
-                b = min(self.expand_breadth, self.n_actions) if i < self.expand_depth else 1
+                b = self.expand_breadth if i < self.expand_depth else 1
                 q_max = tf.reduce_max(tf.reshape(q_plan[i], [-1, b]), axis=1)
                 n = float(self.lookahead_depth - i)
                 v_plan[i - 1] = (v_rollout[i - 1] + q_max * n) / (n + 1)
+
+        for i in range(self.lookahead_depth):
+            q_plan[i] = tf.reshape(q_plan[i], [n_envs, -1])
+            v_plan[i] = tf.reshape(v_plan[i], [n_envs, -1])
 
         return q_plan, v_plan
