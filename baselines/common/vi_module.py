@@ -11,9 +11,9 @@ class VI_trans(object):
         if self.type == 'fc':
             self.fc1 = tf.keras.layers.Dense(self.n_actions * self.hidden_dim, activation='relu', name='vi/trans/fc1')
             self.fc2 = tf.keras.layers.Dense(self.hidden_dim, activation='relu', name='vi/trans/fc2')
-            self.attention = tf.keras.layers.Dense(self.hidden_dim, activation='sigmoid',
-                                                   name='vi/trans/attention')
-            self.fc3 = tf.keras.layers.Dense(self.state_shape[-1], activation='relu', name='vi/trans/fc3')
+            # self.attention = tf.keras.layers.Dense(self.hidden_dim, activation='sigmoid',
+            #                                        name='vi/trans/attention')
+            # self.fc3 = tf.keras.layers.Dense(self.state_shape[-1], activation='relu', name='vi/trans/fc3')
         elif self.type == 'conv':
             self.conv1 = tf.keras.layers.Conv2D(self.n_actions * self.hidden_dim, 3, 1, activation='relu',
                                                 name='vi/trans/conv1')
@@ -29,13 +29,13 @@ class VI_trans(object):
             # n_batch, n_action, dim -> n_batch*n_action, dim
             x = tf.reshape(tf.reshape(self.fc1(s), [-1, self.n_actions, self.hidden_dim]), [-1, self.hidden_dim])
             x = self.fc2(x)
-            att = self.attention(x)
-            x = self.fc3(x)
-            # new_state = bypass + attention * state_trans
-            x = tf.transpose(tf.reshape(x, [-1, self.n_actions, self.hidden_dim]), [1, 0, 2])
-            att = tf.transpose(tf.reshape(att, [-1, self.n_actions, self.hidden_dim]), [1, 0, 2])
-            x = x * att + s
-            x = tf.reshape(tf.transpose(x, [1, 0, 2]), [-1, self.hidden_dim])
+            # att = self.attention(x)
+            # x = self.fc3(x)
+            # # new_state = bypass + attention * state_trans
+            # x = tf.transpose(tf.reshape(x, [-1, self.n_actions, self.hidden_dim]), [1, 0, 2])
+            # att = tf.transpose(tf.reshape(att, [-1, self.n_actions, self.hidden_dim]), [1, 0, 2])
+            # x = x * att + s
+            # x = tf.reshape(tf.transpose(x, [1, 0, 2]), [-1, self.hidden_dim])
         elif self.type == 'conv':
             # n_batch, n_action, h, w, dim -> n_batch*n_action, h, w, dim
             [h, w] = self.state_shape[0:2]
@@ -74,6 +74,9 @@ class VI_module(object):
         self.vi_trans = VI_trans(self.n_actions, self.state_shape)
         self.vi_value = tf.keras.layers.Dense(1, activation=None, name='vi/value')
         self.vi_reward = tf.keras.layers.Dense(self.n_actions, activation=None, name='vi/reward')
+
+        # vi latent layer
+        self.vi_latent = tf.keras.layers.Dense(64, activation='relu', name='vi/latent')
 
     def rollout(self, s, a=None):
         r = self.vi_reward(s)
@@ -116,11 +119,13 @@ class VI_module(object):
         l = np.repeat(np.arange(nenvs), idx.size)
         l = np.stack([l, np.tile(idx, nenvs)], axis=1)
 
+        s_mat = tf.gather_nd(tf.reshape(s_history - s_vi, [nenvs, nstep * nstep, self.state_shape[-1]]), l)
         r_mat = tf.gather_nd(tf.reshape(r_history - r_vi, [nenvs, -1]), l)
         v_mat = tf.gather_nd(tf.reshape(v_history - v_vi, [nenvs, -1]), l)
+        s_loss = tf.math.reduce_mean(tf.math.pow(s_mat, 2))
         r_loss = tf.math.reduce_mean(tf.math.pow(r_mat, 2))
         v_loss = tf.math.reduce_mean(tf.math.pow(v_mat, 2))
-        return r_loss + v_loss
+        return r_loss + v_loss  # + s_loss
 
     def __call__(self, s, **kwargs):
         # tree expansion
@@ -170,4 +175,6 @@ class VI_module(object):
             q_plan[i] = tf.reshape(q_plan[i], [n_envs, -1])
             v_plan[i] = tf.reshape(v_plan[i], [n_envs, -1])
 
-        return q_plan, v_plan
+        q_latent = self.vi_latent(q_plan[0])
+
+        return q_latent, q_plan, v_plan
