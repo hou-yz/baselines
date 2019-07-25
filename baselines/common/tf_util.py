@@ -51,7 +51,7 @@ def huber_loss(x, delta=1.0):
 
 def entropy_loss(x, w=0.01, b=1.0):
     return tf.where(
-        x < b,
+        x > b,
         w * x,
         x
     )
