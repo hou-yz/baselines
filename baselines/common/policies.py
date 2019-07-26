@@ -49,7 +49,7 @@ class PolicyWithValue(object):
             if not hasattr(self, 'vi_module'):
                 self.vi_module = VI_module(env, latent, sess=self.sess)
             q_latent, q_plan, v_plan = self.vi_module(latent)
-            latent = tf.concat([latent, q_latent], axis=1)
+            # latent = tf.concat([latent, q_latent], axis=1)
         vf_latent = tf.layers.flatten(vf_latent)
         latent = tf.layers.flatten(latent)
 
@@ -69,7 +69,7 @@ class PolicyWithValue(object):
             self.q = fc(vf_latent, 'q', env.action_space.n)
             self.vf = self.q
         else:
-            if 0:  # self.iterative:
+            if self.iterative:
                 self.vf = self.vi_module.vi_value(vf_latent)
                 # self.vf = tf.math.reduce_max(q_plan[0], axis=1, keepdims=True)
             else:

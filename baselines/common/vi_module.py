@@ -62,8 +62,7 @@ class VI_module(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, state, expand_depth=3, expand_breadth=4, lookahead_depth=3, gamma=0.99, sess=None):
-
+    def __init__(self, env, state, expand_depth=1, expand_breadth=4, lookahead_depth=1, gamma=0.99, sess=None):
         self.n_actions = env.action_space.n
         self.state_shape = state.shape.as_list()[1:]
         self.expand_depth = expand_depth
@@ -76,6 +75,7 @@ class VI_module(object):
         self.vi_trans = VI_trans(self.n_actions, self.state_shape)
         self.vi_value = tf.keras.layers.Dense(1, activation=None, name='vi/value')
         self.vi_reward = tf.keras.layers.Dense(self.n_actions, activation=None, name='vi/reward')
+        self.vi_pi = tf.keras.layers.Dense(self.n_actions, activation=None, name='pi')
 
         # batch norm layer for vi_loss computation
         self.r_bn = tf.keras.layers.BatchNormalization()
@@ -128,13 +128,13 @@ class VI_module(object):
         s_mat = tf.gather_nd(tf.reshape(s_history - s_vi, [nenvs, nstep * nstep, self.state_shape[-1]]), l)
         r_mat = tf.gather_nd(tf.reshape(r_history - r_vi, [nenvs, -1]), l)
         v_mat = tf.gather_nd(tf.reshape(v_history - v_vi, [nenvs, -1]), l)
-        # bn before loss
-        r_mat = self.r_bn(r_mat)
-        v_mat = self.v_bn(v_mat)
+        # # bn before loss
+        # r_mat = self.r_bn(r_mat)
+        # v_mat = self.v_bn(v_mat)
         # compute loss
-        s_loss = tf.math.reduce_mean(tf.math.pow(s_mat, 2))
-        r_loss = tf.math.reduce_mean(huber_loss(r_mat))
-        v_loss = tf.math.reduce_mean(huber_loss(v_mat))
+        s_loss = tf.math.reduce_sum(huber_loss(s_mat))
+        r_loss = tf.math.reduce_sum(huber_loss(r_mat))
+        v_loss = tf.math.reduce_sum(huber_loss(v_mat))
         return r_loss + v_loss  # + s_loss
 
     def __call__(self, s, **kwargs):

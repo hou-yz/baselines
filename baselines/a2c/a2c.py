@@ -12,7 +12,6 @@ from baselines.common import set_global_seeds, explained_variance
 from baselines.common import tf_util
 from baselines.common.policies import build_policy
 from baselines.ppo2.ppo2 import safemean
-from baselines.common.tf_util import entropy_loss
 
 
 class Model(object):
@@ -72,7 +71,7 @@ class Model(object):
 
         # loss sum
         if train_model.iterative:
-            loss = pg_loss - entropy_loss(entropy) + vf_loss * vf_coef + vi_loss * vi_coef
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + vi_loss * vi_coef
         else:
             loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
 
