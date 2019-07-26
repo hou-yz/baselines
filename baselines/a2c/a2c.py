@@ -67,11 +67,12 @@ class Model(object):
         # value iteration loss
         vi_loss = tf.constant(0.0)
         if train_model.iterative:
-            vi_loss = train_model.vi_module.training_loss(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
+            # vi_loss = train_model.vi_module.training_loss(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
+            pass
 
         # loss sum
         if train_model.iterative:
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + vi_loss * vi_coef
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef  # + vi_loss * vi_coef
         else:
             loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
 
