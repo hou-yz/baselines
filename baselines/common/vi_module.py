@@ -78,9 +78,9 @@ def training_loss(op_rollout, s_history, a_history, v_history, r_history, nenvs,
     # r_mat = r_bn(r_mat)
     # v_mat = v_bn(v_mat)
     # compute loss
-    s_loss = tf.math.reduce_sum(huber_loss(s_mat))
-    r_loss = tf.math.reduce_sum(huber_loss(r_mat))
-    v_loss = tf.math.reduce_sum(huber_loss(v_mat))
+    s_loss = tf.math.reduce_mean(huber_loss(s_mat))
+    r_loss = tf.math.reduce_mean(huber_loss(r_mat))
+    v_loss = tf.math.reduce_mean(huber_loss(v_mat))
     return r_loss + v_loss  # + s_loss
 
 
