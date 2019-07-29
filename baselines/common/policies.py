@@ -16,8 +16,8 @@ class PolicyWithValue(object):
     Encapsulates fields and methods for RL policy and value function estimation with shared parameters
     """
 
-    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, iterative=False, sess=None,
-                 **tensors):
+    def __init__(self, env, observations, latent, estimate_q=False, vf_latent=None, iterative=False, op_rollout=None,
+                 sess=None, **tensors):
         """
         Parameters:
         ----------
@@ -44,13 +44,11 @@ class PolicyWithValue(object):
         self.sess = sess or tf.get_default_session()
 
         vf_latent = vf_latent if vf_latent is not None else latent
+        vf_latent = tf.layers.flatten(vf_latent)
 
         if self.iterative:
-            if not hasattr(self, 'vi_module'):
-                self.vi_module = VI_module(env, latent)
-            # q_latent, q_plan, v_plan = self.vi_module(latent)
+            q_plan, v_plan = VI_module(env, latent, op_rollout)
             # latent = tf.concat([latent, q_latent], axis=1)
-        vf_latent = tf.layers.flatten(vf_latent)
         latent = tf.layers.flatten(latent)
 
         # Based on the action space, will select what probability distribution type
@@ -70,7 +68,8 @@ class PolicyWithValue(object):
             self.vf = self.q
         else:
             if self.iterative:
-                self.vf = self.vi_module.vi_value(vf_latent)
+                with tf.variable_scope('rollout', reuse=True):
+                    self.vf = tf.layers.dense(vf_latent, 1, activation=None, name='value')
                 # self.vf = tf.math.reduce_max(q_plan[0], axis=1, keepdims=True)
             else:
                 self.vf = fc(vf_latent, 'vf', 1)
@@ -140,7 +139,7 @@ def build_policy(env, policy_network, value_network=None, normalize_observations
         network_type = policy_network
         policy_network = get_network_builder(network_type)(**policy_kwargs)
 
-    def policy_fn(nbatch=None, nsteps=None, sess=None, observ_placeholder=None):
+    def policy_fn(nbatch=None, nsteps=None, sess=None, op_rollout=None, observ_placeholder=None):
         ob_space = env.observation_space
 
         X = observ_placeholder if observ_placeholder is not None else observation_placeholder(ob_space,
@@ -156,7 +155,7 @@ def build_policy(env, policy_network, value_network=None, normalize_observations
 
         encoded_x = encode_observation(ob_space, encoded_x)
 
-        with tf.variable_scope('pi', reuse=tf.AUTO_REUSE):
+        with tf.variable_scope('state', reuse=tf.AUTO_REUSE):
             policy_latent = policy_network(encoded_x)
             if isinstance(policy_latent, tuple):
                 policy_latent, recurrent_tensors = policy_latent
@@ -191,6 +190,7 @@ def build_policy(env, policy_network, value_network=None, normalize_observations
             sess=sess,
             estimate_q=estimate_q,
             iterative=iterative,
+            op_rollout=op_rollout,
             **extra_tensors
         )
         return policy

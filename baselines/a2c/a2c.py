@@ -13,6 +13,8 @@ from baselines.common import tf_util
 from baselines.common.policies import build_policy
 from baselines.ppo2.ppo2 import safemean
 
+from baselines.common.vi_module import training_loss, rollout_step
+
 
 class Model(object):
     """
@@ -30,18 +32,19 @@ class Model(object):
 
     def __init__(self, policy, env, nsteps,
                  ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear', vi_coef=1):
+                 alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear', vi_coef=1, iterative=False):
 
         sess = tf_util.get_session()
         nenvs = env.num_envs
         nbatch = nenvs * nsteps
 
         with tf.variable_scope('a2c_model', reuse=tf.AUTO_REUSE):
+            op_rollout = tf.make_template('rollout', rollout_step, n_actions=env.action_space.n) if iterative else None
             # step_model is used for sampling
-            step_model = policy(nenvs, 1, sess)
+            step_model = policy(nenvs, 1, sess, op_rollout)
 
             # train_model is used to train our network
-            train_model = policy(nbatch, nsteps, sess)
+            train_model = policy(nbatch, nsteps, sess, op_rollout)
 
         A = tf.placeholder(train_model.action.dtype, train_model.action.shape)
         ADV = tf.placeholder(tf.float32, [nbatch])
@@ -67,8 +70,12 @@ class Model(object):
         # value iteration loss
         vi_loss = tf.constant(0.0)
         if train_model.iterative:
-            # vi_loss = train_model.vi_module.training_loss(train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
-            pass
+            vi_loss = training_loss(op_rollout, train_model.vi_state, A, R_sum, R_onestep, nenvs, nsteps)
+        #     with tf.variable_scope('a2c_model/rollout/value', reuse=True):
+        #         value_weight = tf.math.reduce_sum(tf.get_variable('kernel'))
+        # else:
+        #     with tf.variable_scope('a2c_model/vf', reuse=True):
+        #         value_weight = tf.math.reduce_sum(tf.get_variable('w'))
 
         # loss sum
         if train_model.iterative:
@@ -198,7 +205,7 @@ def learn(
     # Instantiate the model object (that creates step_model and train_model)
     model = Model(policy=policy, env=env, nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
                   max_grad_norm=max_grad_norm, lr=lr, alpha=alpha, epsilon=epsilon, total_timesteps=total_timesteps,
-                  lrschedule=lrschedule)
+                  lrschedule=lrschedule, **network_kwargs)
     if load_path is not None:
         model.load(load_path)
 
@@ -217,9 +224,8 @@ def learn(
         obs, states, sum_rewards, masks, actions, values, epinfos, dones, onestep_rewards = runner.run()
         epinfobuf.extend(epinfos)
 
-        policy_loss, value_loss, policy_entropy, vi_loss = model.train(obs, states, sum_rewards, masks, actions, values,
-                                                                       dones,
-                                                                       onestep_rewards)
+        policy_loss, value_loss, policy_entropy, vi_loss = model.train(obs, states, sum_rewards, masks,
+                                                                       actions, values, dones, onestep_rewards)
         nseconds = time.time() - tstart
 
         # Calculate the fps (frame per second)
