@@ -78,7 +78,7 @@ class Model(object):
 
         # loss sum
         if train_model.iterative:
-            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef  # + vi_loss * vi_coef
+            loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + vi_loss * vi_coef
         else:
             loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
 

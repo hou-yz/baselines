@@ -84,7 +84,7 @@ def training_loss(op_rollout, s_history, a_history, v_history, r_history, nenvs,
     return r_loss + v_loss  # + s_loss
 
 
-def VI_module(env, state, op_rollout, expand_depth=1, expand_breadth=4, lookahead_depth=1, gamma=0.99):
+def VI_module(env, state, op_rollout, expand_depth=3, expand_breadth=4, lookahead_depth=3, gamma=0.99):
     # value iteration: expand for all possible action
     n_actions = env.action_space.n
     n_envs = state.shape.as_list()[0]

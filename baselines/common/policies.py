@@ -49,7 +49,7 @@ class PolicyWithValue(object):
         if self.iterative:
             q_plan, v_plan = VI_module(env, latent, op_rollout)
             latent = tf.layers.dense(latent, 64, activation='relu', name='latent_lowdim')
-            # latent = tf.concat([latent, q_plan[0]], axis=1)
+            latent = tf.concat([latent, q_plan[0]], axis=1)
         latent = tf.layers.flatten(latent)
 
         # Based on the action space, will select what probability distribution type
